@@ -13,7 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
 
-from constants import DATA_DIR
+from utils.constants import DATA_DIR
 
 #%%
 df_train = pd.read_csv(os.path.join(DATA_DIR, 'train.csv'))
