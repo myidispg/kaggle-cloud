@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from utils.constants import DATA_DIR
+from utils.helpers import get_segmentation_mask
 
 #%%
 df_train = pd.read_csv(os.path.join(DATA_DIR, 'train.csv'))
@@ -75,3 +76,20 @@ plt.show()
 
 """We can see that the labels are perfectly balanced too."""
 # %%
+print('Now, to see some images and their mask.')
+print('Plotting 20 images and their masks.')
+fig = plt.figure(figsize= (20, 20))
+rows = 5
+cols = 4
+for i in range(1, rows*cols + 1):
+    ax = fig.add_subplot(rows, cols, i)
+    data = df_train.sample() # Get a single row as a dataframe
+    label = data.iloc[0, 0]
+    rle_string = data.iloc[0, 1] if type(data.iloc[0, 1]) == str else ""
+    image_name = str(label.split("_")[0])
+    img = cv2.cvtColor(cv2.imread(os.path.join(DATA_DIR,f'train/{image_name}')), cv2.COLOR_BGR2RGB)
+    mask = get_segmentation_mask(rle_string)
+    plt.imshow(img)
+    plt.imshow(mask, alpha=0.5, cmap='gray')
+    ax.set_title(f"label: {label}")
+
