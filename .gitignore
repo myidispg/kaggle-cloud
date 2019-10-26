@@ -1,0 +1,5 @@
+data/
+runs/
+.vscode/
+__pycache__/
+mnist_train/
