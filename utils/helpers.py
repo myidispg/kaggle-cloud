@@ -4,9 +4,8 @@ the project.
 """
 
 import numpy as np
-import albumentations
 
-def get_segmentation_mask(mask_rle: str = '', img_shape: tuple = (1400, 2100)):
+def get_segmentation_mask(mask_rle: str = '', label: str = 'None'):
     """
     Takes the start value and the following pixel count, returns a mask of the same size as image. 
     Input:
@@ -15,6 +14,8 @@ def get_segmentation_mask(mask_rle: str = '', img_shape: tuple = (1400, 2100)):
     Returns:
         mask: Numpy array: 1 - mask, 0 - background
     """
+    img_shape = (1400, 2100) # The RLE's are according to 1400x2100.
+
     s = mask_rle.split()
     starts, lengths = [np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
     starts -= 1
