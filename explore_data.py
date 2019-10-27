@@ -27,7 +27,7 @@ print(f'Counting the number of labelled and unlabelled datapoints.')
 count_labelled = 0
 count_unlabelled = 0
 for index, value in df_train.iterrows():
-    # If lebelled, we get a string
+    # If labelled, we get a string
     if type(value['EncodedPixels']) == str:
         count_labelled += 1
     else:
