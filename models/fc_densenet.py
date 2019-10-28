@@ -110,7 +110,7 @@ class FCDenseNet(nn.Module):
         self.logsoftmax = nn.LogSoftmax()
 
         # Linear layers for classification of classes
-        self.fc1 = nn.Linear(80*10*16, 512)
+        self.fc1 = nn.Linear(12*10*16, 512)
         self.fc2 = nn.Linear(512, 128)
         self.fc3 = nn.Linear(128, 4)
 
@@ -129,7 +129,7 @@ class FCDenseNet(nn.Module):
         x = self.dense_blocks[self.n_scales](x)
 
         encoded = x.clone()
-        print(encoded.shape)
+        # print(encoded.shape)
         encoded = encoded.view(encoded.shape[0], -1)
         
         # Classification for the classes
@@ -160,36 +160,36 @@ class FCDenseNet(nn.Module):
         return nn.Sequential(*layers)
 
 
-def fcdensenet_tiny(drop_rate=0):
-    return FCDenseNet(2, 6, drop_rate=drop_rate)
+def fcdensenet_tiny(n_classes, drop_rate=0):
+    return FCDenseNet(2, 6, n_classes=n_classes, drop_rate=drop_rate)
 
-def fcdensenet56_nodrop():
-    return FCDenseNet(4, 12, drop_rate=0)
-
-
-def fcdensenet56(drop_rate=0.2):
-    return FCDenseNet(4, 12, drop_rate=drop_rate)
+def fcdensenet56_nodrop(n_classes):
+    return FCDenseNet(4, 12, n_classes=n_classes, drop_rate=0)
 
 
-def fcdensenet67(drop_rate=0.2):
-    return FCDenseNet(5, 16, drop_rate=drop_rate)
+def fcdensenet56(n_classes, drop_rate=0.2):
+    return FCDenseNet(4, 12, n_classes=n_classes, drop_rate=drop_rate)
 
 
-def fcdensenet103(drop_rate=0.2):
+def fcdensenet67(n_classes, drop_rate=0.2):
+    return FCDenseNet(5, 16, n_classes=n_classes, drop_rate=drop_rate)
+
+
+def fcdensenet103(n_classes, drop_rate=0.2):
     return FCDenseNet([4, 5, 7, 10, 12, 15, 12, 10, 7, 5, 4], 16,
-                      drop_rate=drop_rate)
+                      n_classes=n_classes, drop_rate=drop_rate)
 
 
-def fcdensenet103_nodrop(drop_rate=0):
+def fcdensenet103_nodrop(n_classes, drop_rate=0):
     return FCDenseNet([4, 5, 7, 10, 12, 15, 12, 10, 7, 5, 4], 16,
-                      drop_rate=drop_rate)
+                      n_classes=n_classes, drop_rate=drop_rate)
 
 if __name__ == '__main__':
     import numpy as np
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
-    model = fcdensenet67(drop_rate=0.2)
+    model = fcdensenet_tiny(n_classes=1, drop_rate=0.2)
     # model = FCDenseNet(in_channels=3, num_classes=1, num_dense_blocks=3,
     #  growth_rate=8, dense_block_depth=3, bottleneck=1)
     model = model.to(device)

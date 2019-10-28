@@ -3,8 +3,8 @@ This file contains the various helper functions used in
 the project.
 """
 
-import numpy as np
 import torch
+import numpy as np
 
 def get_segmentation_mask(mask_rle: str = '', label: str = 'None'):
     """
@@ -64,7 +64,7 @@ class BCEDiceLoss:
         self.bce_loss = torch.nn.BCEWithLogitsLoss()
 
     def __call__(self, y_pred, y_true):
-        return self.bce_loss(y_pred, y_true) + self.dice_loss(y_pred, y_true)
+        return self.bce_loss(y_pred.float(), y_true.float()) + self.dice_loss(y_pred, y_true)
 
 def dice_coefficient(y_pred, y_true, smooth=1):
     """
@@ -90,8 +90,8 @@ def bce_dice_loss(y_pred, y_true, smooth=1):
     return torch.nn.functional.binary_cross_entropy_with_logits(y_pred, y_true) + dice_loss(y_pred, y_true)
 
 if __name__ == '__main__':
-    y_true = torch.from_numpy(np.random.rand(1, 3, 350, 525))
-    y_pred = torch.from_numpy(np.random.rand(1, 3, 350, 525))
+    y_true = torch.from_numpy(np.random.rand(1, 3, 350, 525)).cuda()
+    y_pred = torch.from_numpy(np.random.rand(1, 3, 350, 525)).cuda()
 
     # print(f'y_true: {y_true}\n\ny_pred: {y_pred}')
 
