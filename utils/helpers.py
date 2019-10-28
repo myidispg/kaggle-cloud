@@ -5,6 +5,8 @@ the project.
 
 import numpy as np
 
+import torch
+
 def get_segmentation_mask(mask_rle: str = '', label: str = 'None'):
     """
     Takes the start value and the following pixel count, returns a mask of the same size as image. 
@@ -24,3 +26,36 @@ def get_segmentation_mask(mask_rle: str = '', label: str = 'None'):
     for start, length in zip(starts, lengths):
         mask[start: start + length] = 1
     return mask.reshape(img_shape, order='F')
+
+def dice_coefficient(y_pred, y_true, smooth=1):
+    """
+    Calculate the dice coefficeint of the given numpy arrays.
+    """
+    assert(type(y_pred) == type(y_true) == torch.Tensor), f"Both the arrays must be PyTorch tensors"
+    assert(y_pred.shape == y_true.shape), f"Both the tensors must have equal shape. y_pred has shape: {y_pred.shape} and y_true has shape: {y_true.shape}"
+    y_true_flat = y_true.view(y_true.shape[0], -1)
+    y_pred_flat = y_pred.view(y_pred.shape[0], -1)
+    intersection = torch.sum(y_true_flat * y_pred_flat)
+    return (2. * intersection + smooth) / (torch.sum(y_true_flat) + torch.sum(y_pred_flat) + smooth)
+
+def dice_loss(y_pred, y_true, smooth=1):
+    assert(type(y_pred) == type(y_true) == torch.Tensor), f"Both the arrays must be PyTorch tensors"
+    assert(y_pred.shape == y_true.shape), f"Both the tensors must have equal shape. y_pred has shape: {y_pred.shape} and y_true has shape: {y_true.shape}"
+    y_true_flat = y_true.view(y_true.shape[0], -1)
+    y_pred_flat = y_pred.view(y_pred.shape[0], -1)
+    intersection = y_true_flat * y_pred_flat
+    score = (2. * torch.sum(intersection) + smooth) / (torch.sum(y_true_flat) + torch.sum(y_pred_flat) + smooth)
+    return 1. - score
+
+def bce_dice_loss(y_pred, y_true, smooth=1):
+    return torch.nn.functional.binary_cross_entropy_with_logits(y_pred, y_true) + dice_loss(y_pred, y_true)
+
+if __name__ == '__main__':
+    y_true = torch.from_numpy(np.random.rand(1, 3, 350, 525))
+    y_pred = torch.from_numpy(np.random.rand(1, 3, 350, 525))
+
+    # print(f'y_true: {y_true}\n\ny_pred: {y_pred}')
+
+    print(f'dice coeeficient: {dice_coefficient(y_pred, y_true)}\n' \
+        f'dice loss: {dice_loss(y_pred, y_true)}\n' \
+        f'bce_loss: {bce_dice_loss(y_pred, y_true)}')
