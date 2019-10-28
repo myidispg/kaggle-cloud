@@ -1,4 +1,6 @@
 DATA_DIR = 'data'
+MODEL_DIR = 'trained_models'
+LOG_DIR = 'training_logs'
 
 LABEL2IDX = {'Fish': 0,
              'Flower': 1,
@@ -7,8 +9,6 @@ LABEL2IDX = {'Fish': 0,
 
 IDX2LABELS = dict([(value, key) for (key, value) in LABEL2IDX.items()])
 
-# Whether to shuffle the dataset or not
-SHUFFLE_DATASET = True
 # Validation dataset size
 VALIDATION_SPLIT = 0.01
 
