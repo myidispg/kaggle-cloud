@@ -11,3 +11,4 @@ from .cloud_dataset import CloudDataset
 from .train_utils import Train  
 
 from models.fc_densenet import *
+from models.unet import UNet

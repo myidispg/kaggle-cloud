@@ -11,7 +11,7 @@ from .helpers import BCEDiceLoss, DiceCoefficient, DiceLoss
 
 class Train:
 
-    def __init__(self, model, shuffle: bool=True, print_every=1000,
+    def __init__(self, model, shuffle: bool=True, print_every=1000, batch_size = 1,
      use_tensorboard: bool = True, resume: bool=False, device=torch.device('cpu')):
         """
         Train the model with the specified train and validation loaders.
@@ -19,6 +19,7 @@ class Train:
             model: The model to be used for training
             shuffle: Whether to shuffle the train and val dataloaders. Default=True
             print_every: Number of batches to process before printing the stats Default=1000
+            batch_size: The number of data points processed before weights are updated.
             use_tensorboard: Use Tensorboard to monitor the training. Default=True
             resume: Resume training from the latest loaded model? Default=False
             device: The PyTorch device on which to train. Default=CPU
@@ -67,8 +68,8 @@ class Train:
         train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices)
         val_sampler = torch.utils.data.sampler.SubsetRandomSampler(val_indices)
 
-        self.train_loader = torch.utils.data.DataLoader(cloud_dataset, batch_size=1, sampler=train_sampler)
-        self.val_loader = torch.utils.data.DataLoader(cloud_dataset, batch_size=1, sampler=val_sampler)
+        self.train_loader = torch.utils.data.DataLoader(cloud_dataset, batch_size=batch_size, sampler=train_sampler)
+        self.val_loader = torch.utils.data.DataLoader(cloud_dataset, batch_size=batch_size, sampler=val_sampler)
 
         # Create the criterions and the optimziers
         self.criterion_mask = BCEDiceLoss()
@@ -156,6 +157,7 @@ class Train:
             print(f'Loading the previously trained model and metrics...')
             checkpoint = torch.load(os.path.join(os.getcwd(), MODEL_DIR))
             #TODO read the previous data.
+            self.read_saved_state()
 
         print('Starting training...' if not self.resume else 'Resuming training...')
 
@@ -186,23 +188,25 @@ class Train:
 
                 # At every "self.print_every" step, display the log TODO save the logs too.
                 if (i+1) % self.print_every == 0:
-                    val_mask_loss, val_mask_acc, val_class_loss, val_class_acc = self.validate()
+                    # val_mask_loss, val_mask_acc, val_class_loss, val_class_acc = self.validate()
                     print(f'Epoch: {epoch}, Batch: {i+1}, Loss: {running_loss/(self.print_every)} ' \
                         f'Class loss: {class_running_loss/(self.print_every)}, Mask loss: {mask_running_loss/(self.print_every)}')
-                    print(f'Validation Stats:\nMask loss: {val_mask_loss}, Mask accuracy: {val_mask_acc}, ' \
-                            f'Class loss: {val_class_loss}, Class_accuracy: {val_class_acc}\n')
+                    # print(f'Validation Stats:\nMask loss: {val_mask_loss}, Mask accuracy: {val_mask_acc}, ' \
+                    #         f'Class loss: {val_class_loss}, Class_accuracy: {val_class_acc}\n')
                     
                     self.train_loss.append(running_loss/self.print_every)
                     self.class_loss.append(class_running_loss/self.print_every)
                     self.mask_loss.append(mask_running_loss/self.print_every)
-                    self.val_class_loss.append(val_class_loss)
-                    self.val_mask_loss.append(val_mask_loss)
-                    self.val_class_acc.append(val_class_acc)
-                    self.val_mask_acc.append(val_mask_acc)
+                    # self.val_class_loss.append(val_class_loss)
+                    # self.val_mask_loss.append(val_mask_loss)
+                    # self.val_class_acc.append(val_class_acc)
+                    # self.val_mask_acc.append(val_mask_acc)
 
                     running_loss = 0
                     mask_running_loss = 0
                     class_running_loss = 0
+
+                    self.save_model()
 
 
 
