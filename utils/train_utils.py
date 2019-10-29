@@ -81,6 +81,40 @@ class Train:
         #TODO work on tensorboard section
         #TODO work on logging the stats.
 
+    def save_model(self):
+        """
+        Save the model and stats. For resuming later.        
+        """
+        checkpoint = {
+            'model': self.model.state_dict(),
+            'train_loss': self.train_loss,
+            'class_loss': self.class_loss,
+            'mask_loss': self.mask_loss,
+            'val_class_loss': self.val_class_loss,
+            'val_class_acc': self.val_class_acc,
+            'val_mask_loss': self.val_mask_loss,
+            'val_mask_acc': self.val_mask_acc
+        }
+
+        torch.save(checkpoint, os.path.join(os.getcwd(), MODEL_DIR, 'unet.pth'))
+
+    def read_saved_state(self):
+        """
+        Read the model's state and variables into the class variables.
+        """
+        print('Reading the saved state...')
+        checkpoint = torch.load(os.path.join(os.getcwd(), MODEL_DIR, 'unet.pth'))
+
+        self.model.load_state_dict(checkpoint['model'])
+        self.train_loss = checkpoint['train_loss']
+        self.class_loss = checkpoint['class_loss']
+        self.mask_loss = checkpoint['mask_loss']
+        self.val_class_loss = checkpoint['val_class_loss']
+        self.val_class_acc = checkpoint['val_class_acc']
+        self.val_mask_loss = checkpoint['val_mask_loss']
+        self.val_mask_acc = checkpoint['val_mask_acc']
+        print('Loaded the model state and metrics!')
+
     def validate(self):
         """
          Validate the model. Return the validation scores like:
@@ -105,8 +139,8 @@ class Train:
 
             _, indices = torch.max(predicted_class, dim=1)
 
-            running_class_accuracy += (indices == label).sum().item()
-            running_mask_accuracy += self.dice_coefficient(predicted_mask, mask)
+            running_class_accuracy += (indices.squeeze() == label.squeeze()).sum().item()
+            running_mask_accuracy += self.dice_coefficient(predicted_mask.squeeze(), mask.squeeze())
         
         self.model.train()
 
