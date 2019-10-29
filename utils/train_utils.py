@@ -4,6 +4,7 @@ import os
 import albumentations
 
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 from .cloud_dataset import CloudDataset
 from .constants import DATA_DIR, MODEL_DIR, VALIDATION_SPLIT, IMAGE_SIZE_SMALL
@@ -11,14 +12,16 @@ from .helpers import BCEDiceLoss, DiceCoefficient, DiceLoss
 
 class Train:
 
-    def __init__(self, model, shuffle: bool=True, print_every=1000, batch_size = 1,
-     use_tensorboard: bool = True, resume: bool=False, device=torch.device('cpu')):
+    def __init__(self, model, shuffle: bool=True, print_every=1000, log_every=100,
+    batch_size = 1, use_tensorboard: bool = True, resume: bool=False,
+    device=torch.device('cpu')):
         """
         Train the model with the specified train and validation loaders.
         Args:
             model: The model to be used for training
             shuffle: Whether to shuffle the train and val dataloaders. Default=True
             print_every: Number of batches to process before printing the stats Default=1000
+            log_every: Number of batches after which to log stats into Tensorboard
             batch_size: The number of data points processed before weights are updated.
             use_tensorboard: Use Tensorboard to monitor the training. Default=True
             resume: Resume training from the latest loaded model? Default=False
@@ -63,7 +66,7 @@ class Train:
             np.random.seed(42)
             np.random.shuffle(indices)
 
-        train_indices, val_indices = indices[:split], indices[split:]
+        train_indices, val_indices = indices[split:], indices[:split]
 
         train_sampler = torch.utils.data.sampler.SubsetRandomSampler(train_indices)
         val_sampler = torch.utils.data.sampler.SubsetRandomSampler(val_indices)
@@ -80,6 +83,11 @@ class Train:
         self.dice_coefficient = DiceCoefficient() # Used for validation
 
         #TODO work on tensorboard section
+        if self.use_tensorboard:
+            # Create a tensorboard SummaryWriter()
+            self.tensorboard_writer = SummaryWriter()
+            # self.tensorboard_writer.add_graph(self.model)
+
         #TODO work on logging the stats.
 
     def save_model(self):
@@ -115,6 +123,13 @@ class Train:
         self.val_mask_loss = checkpoint['val_mask_loss']
         self.val_mask_acc = checkpoint['val_mask_acc']
         print('Loaded the model state and metrics!')
+
+        if self.use_tensorboard:
+            # Read the stuff into tensorboard too.
+            for (train_loss, class_loss, mask_loss) in zip(self.train_loss, self.class_loss, self.mask_loss):
+                self.tensorboard_writer.add_scalar('Loss/train', train_loss, 0)
+                self.tensorboard_writer.add_scalar('Loss/class', class_loss, 0)
+                self.tensorboard_writer.add_scalar('Loss/mask', mask_loss, 0)
 
     def validate(self):
         """
@@ -154,9 +169,6 @@ class Train:
             n_epochs: The number of epochs for which to train.
         """
         if self.resume:
-            print(f'Loading the previously trained model and metrics...')
-            checkpoint = torch.load(os.path.join(os.getcwd(), MODEL_DIR))
-            #TODO read the previous data.
             self.read_saved_state()
 
         print('Starting training...' if not self.resume else 'Resuming training...')
@@ -202,11 +214,18 @@ class Train:
                     # self.val_class_acc.append(val_class_acc)
                     # self.val_mask_acc.append(val_mask_acc)
 
+                    if self.use_tensorboard:
+                        self.tensorboard_writer.add_scalar('Loss/train', running_loss/self.print_every, epoch+1)
+                        self.tensorboard_writer.add_scalar('Loss/class', class_loss/self.print_every, epoch+1)
+                        self.tensorboard_writer.add_scalar('Loss/mask', mask_loss/self.print_every, epoch+1)
+
                     running_loss = 0
                     mask_running_loss = 0
                     class_running_loss = 0
 
                     self.save_model()
+
+
 
 
 
