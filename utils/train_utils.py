@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import os
 import albumentations
 
@@ -7,7 +8,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from .cloud_dataset import CloudDataset
-from .constants import DATA_DIR, MODEL_DIR, VALIDATION_SPLIT, IMAGE_SIZE_SMALL
+from .constants import DATA_DIR, MODEL_DIR, VALIDATION_SPLIT, IMAGE_SIZE_SMALL, IDX2LABELS
 from .helpers import BCEDiceLoss, DiceCoefficient, DiceLoss
 
 class Train:
@@ -33,6 +34,7 @@ class Train:
         self.use_tensorboard = use_tensorboard
         self.resume = resume
         self.device = device
+        self.batch_size = batch_size
 
         # Keep a track of all the losses and accuracies
         self.train_loss = list()
@@ -88,6 +90,11 @@ class Train:
             self.tensorboard_writer = SummaryWriter()
             # self.tensorboard_writer.add_graph(self.model)
 
+        # Tensorboard should be usable as soon as the object is instantiated. 
+        # This allows prediction on the model too before need for training. 
+        if self.resume:
+            self.read_saved_state()
+
         #TODO work on logging the stats.
 
     def save_model(self):
@@ -131,6 +138,36 @@ class Train:
                 self.tensorboard_writer.add_scalar('Loss/class', class_loss, 0)
                 self.tensorboard_writer.add_scalar('Loss/mask', mask_loss, 0)
 
+    def predict_sample(self):
+        """
+        Takes in a single batch from the vlaidation loader and performs inference.
+        Plots the result with the original image, mask, label and predicted mask 
+        and label
+        """
+        val_iter = iter(self.val_loader)
+        image, mask, label = next(val_iter)
+
+        predicted_mask, predicted_label = self.model(image.to(self.device))
+
+        predicted_mask = predicted_mask.squeeze().detach().cpu().numpy()
+        
+        f, axarr = plt.subplots(self.batch_size, 3, figsize=(10, self.batch_size*4))
+        if self.batch_size == 1:
+            axarr[0].imshow(image.squeeze().permute(1, 2, 0).cpu().detach().numpy())
+            axarr[0].set_title(f'Generated image: {IDX2LABELS[label.item()]}')
+            axarr[1].imshow(image.squeeze().numpy())
+            axarr[1].set_title(f'Generated mask: {IDX2LABELS[label.item()]}')
+            axarr[2].imshow(predicted_mask)
+            # axarr[2].set_title(f'Predicted mask: {IDX2LABELS}')
+        else:
+            for i in range(self.batch_size):
+                axarr[i, 0].imshow(image[i].permute(1, 2, 0).cpu().detach().numpy())
+                axarr[i, 0].set_title(f'Generated image: {IDX2LABELS[label[i].item()]}')
+                axarr[i, 1].imshow(mask[i].squeeze().numpy())
+                axarr[i, 1].set_title(f'Generated mask: {IDX2LABELS[label[i].item()]}')
+                axarr[i, 2].imshow(predicted_mask[i])
+                # axarr[i, 2].set_title(f'Generated mask: {IDX2LABELS[label[i].item()]}')
+
     def validate(self):
         """
          Validate the model. Return the validation scores like:
@@ -168,8 +205,6 @@ class Train:
         Args:
             n_epochs: The number of epochs for which to train.
         """
-        if self.resume:
-            self.read_saved_state()
 
         print('Starting training...' if not self.resume else 'Resuming training...')
 
