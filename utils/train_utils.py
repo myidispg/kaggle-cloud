@@ -47,12 +47,12 @@ class Train:
 
         # Create the dataloaders
         transforms = albumentations.Compose([
-            albumentations.VerticalFlip(p=0.2),
+            # albumentations.VerticalFlip(p=0.2),
             albumentations.ElasticTransform(p=0.2),
             albumentations.GridDistortion(p=0.2),
             albumentations.HorizontalFlip(p=0.2),
             albumentations.ShiftScaleRotate(p=0.2),
-            albumentations.Normalize(p=0.2)
+            # albumentations.Normalize(p=0.2)
         ])
 
         # Read the dataframe and instantiate the dataset
@@ -80,7 +80,15 @@ class Train:
         self.criterion_mask = BCEDiceLoss()
         self.criterion_class = torch.nn.CrossEntropyLoss()
 
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+        self.optimizer = RAdam(self.model.parameters(), lr=1e-2)
+
+        # Reduce LR on Plateau
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 
+                                                              mode='min',
+                                                              factor=1e-1,
+                                                              verbose=True, 
+                                                              patience=1,
+                                                              )
 
         self.dice_coefficient = DiceCoefficient() # Used for validation
 
@@ -95,14 +103,14 @@ class Train:
         if self.resume:
             self.read_saved_state()
 
-        #TODO work on logging the stats.
-
     def save_model(self):
         """
         Save the model and stats. For resuming later.        
         """
         checkpoint = {
             'model': self.model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'scheduler': self.scheduler.state_dict(),
             'train_loss': self.train_loss,
             'class_loss': self.class_loss,
             'mask_loss': self.mask_loss,
@@ -112,7 +120,7 @@ class Train:
             'val_mask_acc': self.val_mask_acc
         }
 
-        torch.save(checkpoint, os.path.join(os.getcwd(), MODEL_DIR, 'unet.pth'))
+        torch.save(checkpoint, os.path.join(os.getcwd(), MODEL_DIR, 'efficientnet-b2_unet.pth'))
 
     def read_saved_state(self):
         """
@@ -122,6 +130,8 @@ class Train:
         checkpoint = torch.load(os.path.join(os.getcwd(), MODEL_DIR, 'unet.pth'))
 
         self.model.load_state_dict(checkpoint['model'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.scheduler.load_state_dict(checkkpoint['scheduler'])
         self.train_loss = checkpoint['train_loss']
         self.class_loss = checkpoint['class_loss']
         self.mask_loss = checkpoint['mask_loss']
@@ -133,10 +143,25 @@ class Train:
 
         if self.use_tensorboard:
             # Read the stuff into tensorboard too.
-            for (train_loss, class_loss, mask_loss) in zip(self.train_loss, self.class_loss, self.mask_loss):
+            # for (train_loss, class_loss, mask_loss) in zip(self.train_loss, self.class_loss, self.mask_loss):
+            #     self.tensorboard_writer.add_scalar('Loss/train', train_loss, 0)
+            #     self.tensorboard_writer.add_scalar('Loss/class', class_loss, 0)
+            #     self.tensorboard_writer.add_scalar('Loss/mask', mask_loss, 0)
+            for (train_loss, class_loss, mask_loss, val_class_loss, val_class_acc, val_mask_loss, val_mask_acc) in zip(self.train_loss,
+                                                           self.class_loss,
+                                                           self.mask_loss,
+                                                           self.val_class_loss,
+                                                           self.val_class_acc,
+                                                           self.val_mask_loss,
+                                                           self.val_mask_acc):
                 self.tensorboard_writer.add_scalar('Loss/train', train_loss, 0)
                 self.tensorboard_writer.add_scalar('Loss/class', class_loss, 0)
                 self.tensorboard_writer.add_scalar('Loss/mask', mask_loss, 0)
+                self.tensorboard_writer.add_scalar('Loss/val_mask', val_mask_loss, 0)
+                self.tensorboard_writer.add_scalar('Acc/val_mask', val_mask_acc, 0)
+                self.tensorboard_writer.add_scalar('Loss/val_class', val_class_loss, 0)
+                self.tensorboard_writer.add_scalar('Acc/val_class', val_class_acc, 0)
+            print('Logged previous data into tensorboard')
 
     def predict_sample(self):
         """
@@ -182,18 +207,21 @@ class Train:
         running_mask_accuracy = 0
         running_class_accuracy = 0
 
-        for image, mask, label in self.val_loader:
-            image, mask, label = image.to(self.device), mask.to(self.device), label.to(self.device)
+        with torch.no_grad():
+            for image, mask, label in self.val_loader:
+                image, mask, label = image.to(self.device), mask.to(self.device), label.to(self.device)
 
-            predicted_mask, predicted_class = self.model(image)
+                predicted_mask, predicted_class = self.model(image)
 
-            running_mask_loss += self.criterion_mask(predicted_mask.squeeze(), mask.squeeze())
-            running_class_loss += self.criterion_class(predicted_class, label)
+                running_mask_loss += self.criterion_mask(predicted_mask.squeeze().float(),
+                                                        mask.squeeze().float())
+                running_class_loss += self.criterion_class(predicted_class, label)
 
-            _, indices = torch.max(predicted_class, dim=1)
+                _, indices = torch.max(predicted_class, dim=1)
 
-            running_class_accuracy += (indices.squeeze() == label.squeeze()).sum().item()
-            running_mask_accuracy += self.dice_coefficient(predicted_mask.squeeze(), mask.squeeze())
+                running_class_accuracy += (indices.squeeze() == label.squeeze()).sum().item()
+                running_mask_accuracy += self.dice_coefficient(predicted_mask.squeeze().float(),
+                                                            mask.squeeze().float())
         
         self.model.train()
 
@@ -235,32 +263,38 @@ class Train:
 
                 # At every "self.print_every" step, display the log TODO save the logs too.
                 if (i+1) % self.print_every == 0:
-                    # val_mask_loss, val_mask_acc, val_class_loss, val_class_acc = self.validate()
                     print(f'Epoch: {epoch}, Batch: {i+1}, Loss: {running_loss/(self.print_every)} ' \
                         f'Class loss: {class_running_loss/(self.print_every)}, Mask loss: {mask_running_loss/(self.print_every)}')
-                    # print(f'Validation Stats:\nMask loss: {val_mask_loss}, Mask accuracy: {val_mask_acc}, ' \
-                    #         f'Class loss: {val_class_loss}, Class_accuracy: {val_class_acc}\n')
-                    
+
                     self.train_loss.append(running_loss/self.print_every)
                     self.class_loss.append(class_running_loss/self.print_every)
                     self.mask_loss.append(mask_running_loss/self.print_every)
-                    # self.val_class_loss.append(val_class_loss)
-                    # self.val_mask_loss.append(val_mask_loss)
-                    # self.val_class_acc.append(val_class_acc)
-                    # self.val_mask_acc.append(val_mask_acc)
 
                     if self.use_tensorboard:
-                        self.tensorboard_writer.add_scalar('Loss/train', running_loss/self.print_every, epoch+1)
-                        self.tensorboard_writer.add_scalar('Loss/class', class_loss/self.print_every, epoch+1)
-                        self.tensorboard_writer.add_scalar('Loss/mask', mask_loss/self.print_every, epoch+1)
+                        self.tensorboard_writer.add_scalar('Loss/train', running_loss/self.print_every, 0)
+                        self.tensorboard_writer.add_scalar('Loss/class', class_loss/self.print_every, 0)
+                        self.tensorboard_writer.add_scalar('Loss/mask', mask_loss/self.print_every, 0)
 
                     running_loss = 0
                     mask_running_loss = 0
                     class_running_loss = 0
 
                     self.save_model()
+            # Validate after every epoch
+            val_mask_loss, val_mask_acc, val_class_loss, val_class_acc = self.validate()
+            print(f'Validation Stats:\nMask loss: {val_mask_loss}, Mask accuracy: {val_mask_acc}, ' \
+                    f'Class loss: {val_class_loss}, Class_accuracy: {val_class_acc}\n')
+            
+            # Call the learning rate scheduler
+            self.scheduler.step(val_mask_loss)
 
+            self.val_class_loss.append(val_class_loss)
+            self.val_mask_loss.append(val_mask_loss)
+            self.val_class_acc.append(val_class_acc)
+            self.val_mask_acc.append(val_mask_acc)
 
-
-
-
+            if self.use_tensorboard:
+                self.tensorboard_writer.add_scalar('Loss/val_mask', val_mask_loss, 0)
+                self.tensorboard_writer.add_scalar('Acc/val_mask', val_mask_acc, 0)
+                self.tensorboard_writer.add_scalar('Loss/val_class', val_class_loss, 0)
+                self.tensorboard_writer.add_scalar('Acc/val_class', val_class_acc, 0)
