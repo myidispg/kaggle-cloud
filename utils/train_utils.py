@@ -12,14 +12,15 @@ from .constants import DATA_DIR, MODEL_DIR, VALIDATION_SPLIT, IMAGE_SIZE_SMALL, 
 from .helpers import BCEDiceLoss, DiceCoefficient, DiceLoss
 
 class Train:
-
-    def __init__(self, model, shuffle: bool=True, print_every=1000, log_every=100,
-    batch_size = 1, use_tensorboard: bool = True, resume: bool=False,
-    device=torch.device('cpu')):
+    def __init__(self, model, preprocessing, shuffle: bool=True, 
+                 print_every=1000, log_every=100, batch_size = 1,\
+                 use_tensorboard: bool = True, resume: bool=False, 
+                 device=torch.device('cpu')):
         """
         Train the model with the specified train and validation loaders.
         Args:
             model: The model to be used for training
+            preprocessing: The preprocessing steps to be used as per the encoder and the weights.
             shuffle: Whether to shuffle the train and val dataloaders. Default=True
             print_every: Number of batches to process before printing the stats Default=1000
             log_every: Number of batches after which to log stats into Tensorboard
@@ -52,12 +53,13 @@ class Train:
             albumentations.GridDistortion(p=0.2),
             albumentations.HorizontalFlip(p=0.2),
             albumentations.ShiftScaleRotate(p=0.2),
-            # albumentations.Normalize(p=0.2)
+            # albumentations.Normalize(p=1.0)
         ])
 
         # Read the dataframe and instantiate the dataset
         df_train = pd.read_csv(os.path.join(DATA_DIR, 'train.csv'))
-        cloud_dataset = CloudDataset(df_train, transforms, output_img_shape=IMAGE_SIZE_SMALL)
+        cloud_dataset = CloudDataset(df_train, transforms, get_preprocessing(preprocessing), 
+                                     output_img_shape=IMAGE_SIZE_SMALL)
 
         # Creating indices for train and validation set
         dataset_size = len(cloud_dataset)
@@ -80,6 +82,7 @@ class Train:
         self.criterion_mask = BCEDiceLoss()
         self.criterion_class = torch.nn.CrossEntropyLoss()
 
+        # self.optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
         self.optimizer = RAdam(self.model.parameters(), lr=1e-2)
 
         # Reduce LR on Plateau
@@ -87,8 +90,9 @@ class Train:
                                                               mode='min',
                                                               factor=1e-1,
                                                               verbose=True, 
-                                                              patience=1,
+                                                              patience=0,
                                                               )
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1)
 
         self.dice_coefficient = DiceCoefficient() # Used for validation
 
@@ -96,10 +100,11 @@ class Train:
         if self.use_tensorboard:
             # Create a tensorboard SummaryWriter()
             self.tensorboard_writer = SummaryWriter()
-            # self.tensorboard_writer.add_graph(self.model)
-
-        # Tensorboard should be usable as soon as the object is instantiated. 
-        # This allows prediction on the model too before need for training. 
+            myiter = iter(self.train_loader)
+            images, _, _ = next(myiter)
+            self.tensorboard_writer.add_graph(self.model, images.to(self.device), verbose=True)
+            del myiter, images
+        
         if self.resume:
             self.read_saved_state()
 
@@ -127,11 +132,11 @@ class Train:
         Read the model's state and variables into the class variables.
         """
         print('Reading the saved state...')
-        checkpoint = torch.load(os.path.join(os.getcwd(), MODEL_DIR, 'unet.pth'))
+        checkpoint = torch.load(os.path.join(os.getcwd(), MODEL_DIR, 'efficientnet-b2_unet.pth'))
 
         self.model.load_state_dict(checkpoint['model'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.scheduler.load_state_dict(checkkpoint['scheduler'])
+        self.scheduler.load_state_dict(checkpoint['scheduler'])
         self.train_loss = checkpoint['train_loss']
         self.class_loss = checkpoint['class_loss']
         self.mask_loss = checkpoint['mask_loss']
@@ -142,11 +147,11 @@ class Train:
         print('Loaded the model state and metrics!')
 
         if self.use_tensorboard:
-            # Read the stuff into tensorboard too.
             # for (train_loss, class_loss, mask_loss) in zip(self.train_loss, self.class_loss, self.mask_loss):
             #     self.tensorboard_writer.add_scalar('Loss/train', train_loss, 0)
             #     self.tensorboard_writer.add_scalar('Loss/class', class_loss, 0)
             #     self.tensorboard_writer.add_scalar('Loss/mask', mask_loss, 0)
+            # Read the stuff into tensorboard too.
             for (train_loss, class_loss, mask_loss, val_class_loss, val_class_acc, val_mask_loss, val_mask_acc) in zip(self.train_loss,
                                                            self.class_loss,
                                                            self.mask_loss,
@@ -172,7 +177,7 @@ class Train:
         val_iter = iter(self.val_loader)
         image, mask, label = next(val_iter)
 
-        predicted_mask, predicted_label = self.model(image.to(self.device))
+        predicted_mask, _ = self.model(image.to(self.device))
 
         predicted_mask = predicted_mask.squeeze().detach().cpu().numpy()
         
@@ -233,7 +238,6 @@ class Train:
         Args:
             n_epochs: The number of epochs for which to train.
         """
-
         print('Starting training...' if not self.resume else 'Resuming training...')
 
         for epoch in range(n_epochs):
@@ -298,3 +302,42 @@ class Train:
                 self.tensorboard_writer.add_scalar('Acc/val_mask', val_mask_acc, 0)
                 self.tensorboard_writer.add_scalar('Loss/val_class', val_class_loss, 0)
                 self.tensorboard_writer.add_scalar('Acc/val_class', val_class_acc, 0)
+    
+    def current_lr(self):
+        print(f'The current learning rate: {self.scheduler.get_lr()}')
+
+    def current_lr(self):
+        for param_group in self.optimizer.param_groups:
+            return param_group['lr']
+
+    def plot_previous_metrics(self):
+
+        if self.resume:
+            print(f'Plotting training metrics...')
+            f, axarr = plt.subplots(1, 3, figsize = (15, 4))
+            axarr[0].plot(self.train_loss)
+            axarr[0].set_ylabel('Loss')
+            axarr[0].set_title('Training loss')
+            axarr[1].plot(self.class_loss)
+            axarr[1].set_ylabel('Loss')
+            axarr[1].set_title('Class loss')
+            axarr[2].plot(self.mask_loss)
+            axarr[2].set_ylabel('Loss')
+            axarr[2].set_title('Mask loss')
+
+            print(f'Plotting validation metrics...')
+            f, axarr = plt.subplots(1, 4, figsize = (20, 4))
+            axarr[0].plot(self.val_class_loss)
+            axarr[0].set_ylabel('Loss')
+            axarr[0].set_title('Validation Class Loss')
+            axarr[1].plot(self.val_class_acc)
+            axarr[1].set_ylabel('Accuracy')
+            axarr[1].set_title('Validation Class Accuracy')
+            axarr[2].plot(self.val_mask_loss)
+            axarr[2].set_ylabel('Loss')
+            axarr[2].set_title('Validation Mask Loss')
+            axarr[3].plot(self.val_mask_acc)
+            axarr[3].set_ylabel('Accuracy')
+            axarr[3].set_title('Validation Mask Accuracy')
+        else:
+            print(f'No metrics to plot yet.')

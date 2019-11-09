@@ -14,3 +14,4 @@ VALIDATION_SPLIT = 0.01
 
 IMAGE_SIZE_ORIG = (1400, 2100) # Height x Width
 IMAGE_SIZE_SMALL = (350, 525) # Height x Width
+IMAGE_SIZE_SMALL = (320, 544) # Height x Width

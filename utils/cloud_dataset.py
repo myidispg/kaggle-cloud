@@ -8,12 +8,14 @@ from .helpers import get_segmentation_mask
 
 class CloudDataset(Dataset):
     """Cloud Dataset for Segmentation"""
-    def __init__(self, df, transforms, train: bool=True, output_img_shape: tuple=True):
+    def __init__(self, df, transforms, preprocessing, train: bool=True,
+                 output_img_shape: tuple=True):
         """
         Custom PyTorch Cloud Dataset.
         Inputs: 
             df: The dataframe with labels and rle
             transforms: The albumentations transforms pipeline
+            preprocessing: The preprocessing for the encoder and the weights.
             train: A boolean value to denote whether train set or validations set
             output_img_shape: The output shape of the image and the mask
         """
@@ -22,6 +24,7 @@ class CloudDataset(Dataset):
 
         self.df = df
         self.transforms = transforms
+        self.preprocessing = preprocessing
         self.train = train
 
         self.output_img_shape = output_img_shape
@@ -53,6 +56,11 @@ class CloudDataset(Dataset):
           augmented = self.transforms(image=img, mask=mask)
           img = augmented['image']
           mask = augmented['mask']
+
+        if self.preprocessing:
+            preprocess = self.preprocessing(image=img, mask=mask)
+            img = preprocess['image']
+            mask = preprocess['mask']
 
         img = img.transpose(2, 0, 1).astype('float32')
         
